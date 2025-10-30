@@ -122,7 +122,7 @@ def build_agent_runner():
 agent_runner = build_agent_runner()
 
 
-def run_agent(message: str) -> Optional[str]:
+def run_agent(message: str, system_prompt: Optional[str] = None) -> Optional[str]:
     """Ask the LangGraph agent for a reply; return None if unavailable."""
 
     # Initialize Langfuse CallbackHandler for Langchain (tracing)
@@ -131,8 +131,13 @@ def run_agent(message: str) -> Optional[str]:
     if agent_runner is None:
         return None
 
+    messages = []
+    if system_prompt:
+        messages.append(("system", system_prompt))
+    messages.append(("user", message))
+
     try:
-        result = agent_runner.invoke({"messages": [("user", message)]}, config={"callbacks": [langfuse_handler]})
+        result = agent_runner.invoke({"messages": messages}, config={"callbacks": [langfuse_handler]})
     except Exception as exc:  # fall back to rule-based helper on errors
         print(f"[LangGraph] agent invocation failed: {exc}")
         return None
@@ -176,14 +181,11 @@ def build_offline_reply(message: str) -> str:
     return "I am in offline mode. Ask about Streamlit, FastAPI, or Langfuse to see directed tips."
 
 
-def invoke_agent(message: str, langfuse_client: Langfuse, session_id: str) -> tuple[str, str]:
-    # Use the predefined session ID with trace_context
-    with langfuse_client.start_as_current_span(
-            name="🤖-fastapi-agent"
-    ) as span:
+def invoke_agent(message: str, langfuse_client: Langfuse, session_id: str, system_prompt: Optional[str] = None) -> tuple[str, str]:
+    with langfuse_client.start_as_current_span(name="🤖-fastapi-agent") as span:
         span.update_trace(input=message, session_id=session_id)
 
-        agent_reply = run_agent(message)
+        agent_reply = run_agent(message, system_prompt)
 
         span.update_trace(output=agent_reply)
 
@@ -248,10 +250,17 @@ def chat(payload: ChatRequest, username: str = Depends(verify_token)) -> ChatRes
         monitored = False
 
     # invoke the agent
+    SYSTEM_PROMPT = """
+        You are a deployment assistant for Class 5 demos. 
+        Explain environment setup, FastAPI backend deployment, and Streamlit UI integration clearly. 
+        Use available tools like Tavily for recent context and cite sources when useful. 
+    """
+
     reply, source = invoke_agent(
         message=message,
         langfuse_client=langfuse_client,
-        session_id=session_id
+        session_id=session_id,
+        system_prompt=SYSTEM_PROMPT
     )
 
     return ChatResponse(
