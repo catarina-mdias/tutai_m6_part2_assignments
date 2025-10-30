@@ -15,16 +15,15 @@ from langchain_core.tools import tool
 from langfuse import Langfuse, get_client
 from langfuse.langchain import CallbackHandler
 
-from tavily import TavilyClient
-
-
 # Load environment variables from .env file
 load_dotenv()
+
 
 # Pydantic python data models to ensure data integrity and validity
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+
 
 class ChatResponse(BaseModel):
     reply: str
@@ -32,9 +31,11 @@ class ChatResponse(BaseModel):
     monitored: bool
     session_id: str
 
+
 class LoginRequest(BaseModel):
     username: str
     password: str
+
 
 class LoginResponse(BaseModel):
     message: str
@@ -52,7 +53,6 @@ app.add_middleware(
 )
 app.state.active_tokens: dict[str, str] = {}
 
-
 # --- Setup helpers ---------------------------------------------------------
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -63,54 +63,42 @@ LANGFUSE_HOST = os.getenv("LANGFUSE_HOST")
 LANGFUSE_ENV = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
 AGENT_API_USERNAME = os.getenv("AGENT_API_USERNAME")
 AGENT_API_PASSWORD = os.getenv("AGENT_API_PASSWORD")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 if not AGENT_API_USERNAME or not AGENT_API_PASSWORD:
     print("[Auth] Warning: AGENT_API_USERNAME or AGENT_API_PASSWORD is missing. Login will fail until both are set.")
 
+
 def build_tools():
-    """Create helper tools the agent can call, including Tavily search."""
+    """Create helper tools the agent can call."""
+
     if tool is None:
         return []
 
     @tool
     def streamlit_playbook(question: str) -> str:
         """Return short tips for building Streamlit interfaces."""
+
         question = question.lower()
         print("[Tool] streamlit_playbook called")
         if "deploy" in question:
             return "Push to GitHub, then deploy on Streamlit Community Cloud with your main app file."
         if "state" in question:
             return "Use st.session_state to remember chat history or cached data between reruns."
-        return "Streamlit reruns your script from top to bottom. Keep UI simple and react to user inputs."
+        return "Streamlit reruns your script from top to bottom. Keep UI simple and react to user inputs."  # noqa: E501
 
     @tool
     def deployment_checklist(topic: str) -> str:
         """Outline the steps to expose an agent via API."""
+
         topic = topic.lower()
         print("[Tool] deployment_checklist called")
         if "fastapi" in topic:
             return "Create endpoints, test with /docs, add CORS for the UI, and deploy via Render or similar."
         if "monitor" in topic or "langfuse" in topic:
             return "Capture traces per request, store inputs/outputs, review failures, then iterate on prompts/tools."
-        return "General flow: build API locally, write a health check, containerize or deploy to Render, add monitoring."
+        return "General flow: build API locally, write a health check, containerize or deploy to Render, add monitoring."  # noqa: E501
 
-    @tool
-    def tavily_search(query: str) -> str:
-        """Perform a web search using Tavily and summarize key sources."""
-        if not TAVILY_API_KEY:
-            return "Tavily API key not configured."
-        client = TavilyClient(api_key=TAVILY_API_KEY)
-        try:
-            results = client.search(query)
-            snippets = []
-            for item in results.get("results", [])[:3]:
-                snippets.append(f"- {item.get('title', '')}: {item.get('url', '')}")
-            return "Tavily search results:\n" + "\n".join(snippets)
-        except Exception as e:
-            return f"Error calling Tavily: {e}"
-
-    return [streamlit_playbook, deployment_checklist, tavily_search]
+    return [streamlit_playbook, deployment_checklist]
 
 
 def build_agent_runner():
@@ -125,17 +113,7 @@ def build_agent_runner():
 
     try:
         llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, api_key=OPENAI_API_KEY)
-        system_prompt = (
-            "You are a deployment assistant for Class 5 demos. "
-            "Explain environment setup, FastAPI backend deployment, and Streamlit UI integration clearly. "
-            "Use available tools like Tavily for recent context and cite sources when useful. "
-        )
-
-        return create_react_agent(
-            llm,
-            build_tools(),
-            messages=[("system", system_prompt)],
-        )
+        return create_react_agent(llm, tools)
     except Exception as exc:  # keep the API functional without the agent
         print(f"[LangGraph] could not create agent, using rule-based replies. Error: {exc}")
         return None
@@ -201,9 +179,9 @@ def build_offline_reply(message: str) -> str:
 def invoke_agent(message: str, langfuse_client: Langfuse, session_id: str) -> tuple[str, str]:
     # Use the predefined session ID with trace_context
     with langfuse_client.start_as_current_span(
-        name="🤖-fastapi-agent"
+            name="🤖-fastapi-agent"
     ) as span:
-        span.update_trace(input=message, session_id=session_id)
+        span.update_trace(input=message, session_id="chat_tutai_123")
 
         agent_reply = run_agent(message)
 
@@ -213,13 +191,16 @@ def invoke_agent(message: str, langfuse_client: Langfuse, session_id: str) -> tu
         return agent_reply, f"langgraph:{OPENAI_MODEL}"
     return build_offline_reply(message), "rule-based"
 
+
 # Generate token for authentication
 def create_token(username: str) -> str:
     return f"token-{uuid4()}-{username}"
 
+
 # Persist the token on the "memory" of the API
 def save_token(token: str, username: str) -> None:
     app.state.active_tokens[token] = username
+
 
 # Validate if the token passed by the user matches the one that was generated by the API
 def verify_token(x_auth_token: str = Header(..., convert_underscores=False)) -> str:
