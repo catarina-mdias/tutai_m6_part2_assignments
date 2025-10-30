@@ -7,3 +7,4 @@ langgraph>=0.0.48
 langchain-openai>=0.1.10
 langchain-core>=0.1.52
 langchain==0.3.27
+tavily-python == 0.7.12
