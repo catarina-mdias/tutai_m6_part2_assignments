@@ -3,6 +3,15 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Agents.md
+Agents.md
+
+# mac stuff
+.DS_Store
+
+# pptx presentations
+*.pptx
+
 # C extensions
 *.so
 
