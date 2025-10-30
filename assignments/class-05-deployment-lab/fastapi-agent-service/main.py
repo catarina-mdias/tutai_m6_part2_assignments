@@ -15,6 +15,8 @@ from langchain_core.tools import tool
 from langfuse import Langfuse, get_client
 from langfuse.langchain import CallbackHandler
 
+from tavily import TavilyClient
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -63,42 +65,56 @@ LANGFUSE_HOST = os.getenv("LANGFUSE_HOST")
 LANGFUSE_ENV = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
 AGENT_API_USERNAME = os.getenv("AGENT_API_USERNAME")
 AGENT_API_PASSWORD = os.getenv("AGENT_API_PASSWORD")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 if not AGENT_API_USERNAME or not AGENT_API_PASSWORD:
     print("[Auth] Warning: AGENT_API_USERNAME or AGENT_API_PASSWORD is missing. Login will fail until both are set.")
 
 
 def build_tools():
-    """Create helper tools the agent can call."""
-
+    """Create helper tools the agent can call, including Tavily search."""
     if tool is None:
         return []
 
     @tool
     def streamlit_playbook(question: str) -> str:
         """Return short tips for building Streamlit interfaces."""
-
         question = question.lower()
         print("[Tool] streamlit_playbook called")
         if "deploy" in question:
             return "Push to GitHub, then deploy on Streamlit Community Cloud with your main app file."
         if "state" in question:
             return "Use st.session_state to remember chat history or cached data between reruns."
-        return "Streamlit reruns your script from top to bottom. Keep UI simple and react to user inputs."  # noqa: E501
+        return "Streamlit reruns your script from top to bottom. Keep UI simple and react to user inputs."
 
     @tool
     def deployment_checklist(topic: str) -> str:
         """Outline the steps to expose an agent via API."""
-
         topic = topic.lower()
         print("[Tool] deployment_checklist called")
         if "fastapi" in topic:
             return "Create endpoints, test with /docs, add CORS for the UI, and deploy via Render or similar."
         if "monitor" in topic or "langfuse" in topic:
             return "Capture traces per request, store inputs/outputs, review failures, then iterate on prompts/tools."
-        return "General flow: build API locally, write a health check, containerize or deploy to Render, add monitoring."  # noqa: E501
+        return "General flow: build API locally, write a health check, containerize or deploy to Render, add monitoring."
 
-    return [streamlit_playbook, deployment_checklist]
+    @tool
+    def tavily_search(query: str) -> str:
+        """Perform a web search using Tavily and summarize key sources."""
+        if not TAVILY_API_KEY:
+            return "Tavily API key not configured."
+        client = TavilyClient(api_key=TAVILY_API_KEY)
+        print("[Tool] tavily_search called")
+        try:
+            results = client.search(query)
+            snippets = []
+            for item in results.get("results", [])[:3]:
+                snippets.append(f"- {item.get('title', '')}: {item.get('url', '')}")
+            return "Tavily search results:\n" + "\n".join(snippets)
+        except Exception as e:
+            return f"Error calling Tavily: {e}"
+
+    return [streamlit_playbook, deployment_checklist, tavily_search]
 
 
 def build_agent_runner():
