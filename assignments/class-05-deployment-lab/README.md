@@ -123,7 +123,7 @@ This project can be run locally or accessed via the public demo deployments:
 
  - Streamlit Frontend (UI): https://tutai-m6-assignments-class5.streamlit.app/
 
- - FastAPI Backend (API): https://tutai-m6-part2-assignments.onrender.com
+ - FastAPI Backend (API): https://tutai-m6-part2-assignments-zapk.onrender.com
 
 
 Both the local and cloud deployments are functionally equivalent — the Streamlit app communicates with the same FastAPI backend.
