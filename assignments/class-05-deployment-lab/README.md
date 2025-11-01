@@ -121,9 +121,9 @@ curl -X POST http://127.0.0.1:8000/chat \
 ## Deployment Notes
 This project can be run locally or accessed via the public demo deployments:
 
- - Streamlit Frontend (UI): https://class5-demo.streamlit.app
+ - Streamlit Frontend (UI): https://tutai-m6-assignments-class5.streamlit.app/
 
- - FastAPI Backend (API): https://class5-agent.onrender.com
+ - FastAPI Backend (API): https://tutai-m6-part2-assignments.onrender.com
 
 
 Both the local and cloud deployments are functionally equivalent — the Streamlit app communicates with the same FastAPI backend.
