@@ -17,6 +17,9 @@ from langfuse.langchain import CallbackHandler
 
 from tavily import TavilyClient
 
+from guardrails import Guard, OnFailAction
+from guardrails.hub import ReadingTime, RestrictToTopic
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -69,6 +72,43 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 if not AGENT_API_USERNAME or not AGENT_API_PASSWORD:
     print("[Auth] Warning: AGENT_API_USERNAME or AGENT_API_PASSWORD is missing. Login will fail until both are set.")
+
+
+# --- Guardrail Functions ------------------------------------------------------
+def apply_reading_time_guardrail(response_text: str):
+    """Ensure the assistant's response can be read in under 15 seconds."""
+    FIFTEEN_SECONDS = 15 / 60  # reading_time is in minutes
+    guard = Guard().use(
+        ReadingTime,
+        reading_time=FIFTEEN_SECONDS,
+        on_fail=OnFailAction.EXCEPTION
+    )
+
+    try:
+        return guard.validate(response_text)
+    except Exception as e:
+        print("[Guardrail: ReadingTime] Triggered:", e)
+        return "GUARDRAILS ERROR"
+
+
+def apply_topic_guardrail(prompt: str):
+    """Restrict all conversations to Streamlit, FastAPI, and Programming."""
+    guard = Guard().use(
+        RestrictToTopic(
+            valid_topics=["streamlit", "fastapi", "programming"],
+            invalid_topics=["politics", "music", "sports"],
+            disable_classifier=True,
+            disable_llm=False,
+            on_fail=OnFailAction.EXCEPTION
+        )
+    )
+
+    try:
+        return guard.validate(prompt)
+    except Exception as e:
+        print("[Guardrail: RestrictToTopic] Triggered:", e)
+        return "GUARDRAILS ERROR"
+
 
 
 def build_tools():
@@ -227,14 +267,14 @@ def login(credentials: LoginRequest) -> LoginResponse:
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, username: str = Depends(verify_token)) -> ChatResponse:
+    """Main chat endpoint with topic and reading-time guardrails."""
+
     message = payload.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
-    # ID of the conversation
     session_id = payload.session_id
 
-    # Verify connection
     langfuse_client = get_client()
     if langfuse_client.auth_check():
         print("Langfuse client is authenticated and ready!")
@@ -243,11 +283,23 @@ def chat(payload: ChatRequest, username: str = Depends(verify_token)) -> ChatRes
         print("Authentication failed. Please check your credentials and host.")
         monitored = False
 
-    # invoke the agent
+    guard_topic_result = apply_topic_guardrail(message)
+    if guard_topic_result == "GUARDRAILS ERROR":
+        print("[Guardrail] Restricted topic triggered.")
+        return ChatResponse(
+            reply=(
+                "Sorry, I can only discuss topics related to Streamlit, "
+                "FastAPI, or general programming. Please adjust your question."
+            ),
+            source="guardrail:topic",
+            monitored=False,
+            session_id=session_id
+        )
+
     SYSTEM_PROMPT = """
-        You are a deployment assistant for Class 5 demos. 
+        You are a deployment assistant for Class 6 demos. 
         Explain environment setup, FastAPI backend deployment, and Streamlit UI integration clearly. 
-        Use available tools like Tavily for recent context and cite sources when useful. 
+        Use the Tavily search tool for recent context and cite sources when useful. 
     """
 
     reply, source = invoke_agent(
@@ -256,6 +308,20 @@ def chat(payload: ChatRequest, username: str = Depends(verify_token)) -> ChatRes
         session_id=session_id,
         system_prompt=SYSTEM_PROMPT
     )
+
+    guard_length_result = apply_reading_time_guardrail(reply)
+    if guard_length_result == "GUARDRAILS ERROR":
+        print("[Guardrail] Reading time exceeded.")
+        return ChatResponse(
+            reply=(
+                "The generated answer would take longer than 15 seconds to read. "
+                "Please simplify or narrow down your question so I can provide a "
+                "concise and focused response."
+            ),
+            source="guardrail:reading_time",
+            monitored=monitored,
+            session_id=session_id
+        )
 
     return ChatResponse(
         reply=reply,
