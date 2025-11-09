@@ -19,6 +19,9 @@ from tavily import TavilyClient
 
 from guardrails import Guard, OnFailAction
 from guardrails.hub import ReadingTime, RestrictToTopic
+from guardrails import Guard, OnFailAction, register_validator
+from guardrails.validator_base import PassResult, FailResult, ValidationResult
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -109,6 +112,47 @@ def apply_topic_guardrail(prompt: str):
         print("[Guardrail: RestrictToTopic] Triggered:", e)
         return "GUARDRAILS ERROR"
 
+
+@register_validator(name="dark-web-check", data_type="string")
+def dark_web_check(value: str, metadata: dict) -> ValidationResult:
+    """Detect mentions of dark web, Tor, or illegal content keywords."""
+    mentioned_terms = []
+
+    suspicious_terms = [
+        "dark web",
+        "darkweb",
+        "tor browser",
+        "hidden service",
+        "illegal marketplace",
+        "black market",
+        "stolen data",
+        "credit card dump",
+        "hack forum",
+    ]
+
+    # Normalize the input
+    text = (value or "").lower()
+
+    for term in suspicious_terms:
+        if term in text:
+            mentioned_terms.append(term)
+
+    if mentioned_terms:
+        return FailResult(
+            error_message=f"Detected dark web–related content: {', '.join(mentioned_terms)}"
+        )
+    else:
+        return PassResult()
+
+
+def apply_darkweb_guardrail(text: str):
+    """Apply custom dark web validator to a message or AI response."""
+    guard = Guard().use("dark-web-check", on_fail=OnFailAction.EXCEPTION)
+    try:
+        return guard.validate(text)
+    except Exception as e:
+        print("[Guardrail] Dark web content detected:", e)
+        return "GUARDRAILS ERROR"
 
 
 def build_tools():
@@ -282,6 +326,20 @@ def chat(payload: ChatRequest, username: str = Depends(verify_token)) -> ChatRes
     else:
         print("Authentication failed. Please check your credentials and host.")
         monitored = False
+
+    guard_darkweb_result = apply_darkweb_guardrail(message)
+    if guard_darkweb_result == "GUARDRAILS ERROR":
+        print("[Guardrail: DarkWeb] Dark web content detected.")
+        return ChatResponse(
+            reply=(
+                "Your message appears to involve dark web or illegal content. "
+                "For safety and compliance, I can’t assist with that. "
+                "Please stick to legal topics like Streamlit, FastAPI, or general programming."
+            ),
+            source="guardrail:darkweb",
+            monitored=False,
+            session_id=session_id
+        )
 
     guard_topic_result = apply_topic_guardrail(message)
     if guard_topic_result == "GUARDRAILS ERROR":
