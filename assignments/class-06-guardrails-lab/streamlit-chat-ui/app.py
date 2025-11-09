@@ -105,7 +105,7 @@ def send_to_api(user_text: str):
             url,
             json=payload,
             headers=headers or None,
-            timeout=20,
+            timeout=60,
         )
         if response.status_code == 401:
             st.warning("API token rejected. Log out and back in to refresh your session.")
@@ -186,6 +186,24 @@ if user_input:
     with st.chat_message("assistant"):
         with st.spinner("Waiting for FastAPI..."):
             data = send_to_api(user_input)
-        st.markdown(data["reply"])
-        st.caption(f"Source: {data['source']} • Langfuse trace: {data['monitored']}")
-        st.session_state.messages.append({"role": "assistant", "content": data["reply"]})
+
+        reply_text = data["reply"]
+        source = data.get("source", "")
+
+        # Display a guardrail warning if triggered
+        if source.startswith("guardrail:"):
+            guard_type = source.split(":")[1]
+            icon = "⚠️"  # default warning
+
+            if guard_type == "reading_time":
+                icon = "⏱️"
+            elif guard_type == "darkweb":
+                icon = "🚫"
+            elif guard_type == "topic":
+                icon = "⚠️"
+
+            st.warning(f"{icon} Guardrail triggered: {guard_type.replace('_', ' ').title()}")
+
+        st.markdown(reply_text)
+        st.caption(f"Source: {source} • Langfuse trace: {data['monitored']}")
+        st.session_state.messages.append({"role": "assistant", "content": reply_text})

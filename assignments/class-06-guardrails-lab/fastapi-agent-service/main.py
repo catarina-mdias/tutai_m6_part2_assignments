@@ -79,8 +79,8 @@ if not AGENT_API_USERNAME or not AGENT_API_PASSWORD:
 
 # --- Guardrail Functions ------------------------------------------------------
 def apply_reading_time_guardrail(response_text: str):
-    """Ensure the assistant's response can be read in under 15 seconds."""
-    FIFTEEN_SECONDS = 15 / 60  # reading_time is in minutes
+    """Ensure the assistant's response can be read in under 90 seconds."""
+    FIFTEEN_SECONDS = 90 / 60  # reading_time is in minutes
     guard = Guard().use(
         ReadingTime,
         reading_time=FIFTEEN_SECONDS,
@@ -98,7 +98,7 @@ def apply_topic_guardrail(prompt: str):
     """Restrict all conversations to Streamlit, FastAPI, and Programming."""
     guard = Guard().use(
         RestrictToTopic(
-            valid_topics=["streamlit", "fastapi", "programming"],
+            valid_topics=["streamlit", "fastapi", "API", "Langfuse"],
             invalid_topics=["politics", "music", "sports"],
             disable_classifier=True,
             disable_llm=False,
@@ -372,7 +372,7 @@ def chat(payload: ChatRequest, username: str = Depends(verify_token)) -> ChatRes
         print("[Guardrail] Reading time exceeded.")
         return ChatResponse(
             reply=(
-                "The generated answer would take longer than 15 seconds to read. "
+                "The generated answer would take longer than 90 seconds to read. "
                 "Please simplify or narrow down your question so I can provide a "
                 "concise and focused response."
             ),
